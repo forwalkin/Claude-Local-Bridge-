@@ -55,7 +55,7 @@ function createExecutionEngine({
     const skillName = operation.skillName;
 
     // --- Checagem de confirmação, sempre ANTES de qualquer spawn ---
-    if (skill.destructive === true) {
+    if (operation.destructive === true) {
       if (!confirmationId || !fingerprint) {
         log("execution.attempted_without_confirmation", {
           severity: "critical", outcome: "CONFIRMATION_REQUIRED", skillName
