@@ -30,40 +30,7 @@ Dois princípios guiam todas as decisões de arquitetura do projeto:
 
 ## Arquitetura
 
-```
-manifesto (JSON) → SkillLoader → skillValidator (Ajv) → SkillRegistry
-                                                              │
-                                          (deep freeze, registro atômico)
-                                                              ▼
-                                  PermissionEngine.evaluate({skill, input})
-                                          valida input da chamada contra o
-                                          schema da skill + permissions
-                                                              │ allowed
-                                                              ▼
-                                  PathPolicy.evaluate({skill, input})
-                                          resolve/canonicaliza paths contra
-                                          o sandbox, bloqueia traversal e
-                                          escape via symlink/junction
-                                                              │ allowed, resolvedPaths
-                                                              ▼
-                                  skill.destructive === true?
-                                     │ sim                    │ não
-                                     ▼                        │
-                        ConfirmationManager                   │
-                     (fluxo de aprovação humana,               │
-                      fingerprint da operação,                 │
-                      single-use, TTL)                         │
-                                     │ consumed: true           │
-                                     ▼                        ▼
-                              ExecutionEngine.execute(...)
-                       (child_process isolado, stdin/stdout
-                        estruturado, timeout, limite de saída)
-                                     │
-                                     ▼
-                              AuditLogger.log(evento)
-                       (nunca lança, redige dados sensíveis,
-                        stdout em JSON Lines)
-```
+![Arquitetura do projeto](./docs/architecture.png)
 
 Cada seta acima é uma chamada de função real e testada — não há, hoje,
 nenhum código que already conecte todas essas etapas automaticamente a
