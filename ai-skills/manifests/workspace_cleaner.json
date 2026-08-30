@@ -1,0 +1,23 @@
+{
+  "name": "workspace_cleaner",
+  "description": "Localiza arquivos permitidos no workspace.",
+  "destructive": true,
+  "pathFields": [],
+  "input": {
+    "type": "object",
+    "properties": {
+      "file_extension": {
+        "type": "string"
+      },
+      "dry_run": {
+        "type": "boolean"
+      }
+    },
+    "required": ["file_extension", "dry_run"],
+    "additionalProperties": false
+  },
+  "permissions": [
+    "filesystem.read",
+    "filesystem.delete"
+  ]
+}
