@@ -106,6 +106,11 @@ function isContained(root, target) {
  * completo simplesmente lançaria ENOENT sem revelar que o ancestral já
  * escapou do sandbox.
  *
+ * @param {string} resolvedPath
+ * @param {{ realpath?: (p: string) => Promise<string> }} [deps] Dependência
+ *   injetável, usada apenas para tornar testável o tratamento de erros de
+ *   filesystem sem depender de permissões reais do SO. O padrão é
+ *   fs.realpath; os chamadores de produção (PathPolicy) não a fornecem.
  * @returns {{ canonicalPath: string, existed: boolean }}
  * @throws {Error} para erros de filesystem inesperados (não ENOENT), ex.
  *   permissão negada — isso é tratado como falha de sistema, não como
@@ -113,9 +118,13 @@ function isContained(root, target) {
  * @throws {Error} se nenhum ancestral existente for encontrado até a raiz
  *   do filesystem (situação anômala, indica sandboxRoot mal configurado).
  */
-async function canonicalizeAgainstFilesystem(resolvedPath) {
+async function canonicalizeAgainstFilesystem(resolvedPath, { realpath = fs.realpath } = {}) {
+  if (typeof realpath !== "function") {
+    throw new TypeError("canonicalizeAgainstFilesystem: realpath deve ser uma função.");
+  }
+
   try {
-    const real = await fs.realpath(resolvedPath);
+    const real = await realpath(resolvedPath);
     return { canonicalPath: real, existed: true };
   } catch (err) {
     if (err.code !== "ENOENT") {
@@ -130,7 +139,7 @@ async function canonicalizeAgainstFilesystem(resolvedPath) {
 
   while (true) {
     try {
-      const realAncestor = await fs.realpath(current);
+      const realAncestor = await realpath(current);
       missingParts.reverse();
       return {
         canonicalPath: path.join(realAncestor, ...missingParts),

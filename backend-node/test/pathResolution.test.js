@@ -133,22 +133,89 @@ test("canonicalizeAgainstFilesystem: sobe múltiplos ancestrais inexistentes at�
   assert.equal(result.existed, false);
 });
 
+function fsError(code, message = code) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+// realpath controlado: mapeia path -> valor retornado ou erro lançado, e
+// registra a ordem das chamadas. Não toca o filesystem nem depende de
+// permissões do SO (funciona igual em Windows, Linux e como root).
+function makeFakeRealpath(behavior) {
+  const calls = [];
+  const realpath = async (p) => {
+    calls.push(p);
+    const outcome = behavior(p);
+    if (outcome instanceof Error) {
+      throw outcome;
+    }
+    return outcome;
+  };
+  return { realpath, calls };
+}
+
 test("canonicalizeAgainstFilesystem: propaga erros de filesystem que não são ENOENT", async () => {
-  if (process.getuid && process.getuid() === 0) {
-    return; // rodando como root: chmod não bloqueia acesso, teste não é aplicável
-  }
+  const target = path.join(path.resolve("raiz"), "restrito", "arquivo.txt");
+  const ancestor = path.dirname(target);
+  const denied = fsError("EACCES", "permissão negada simulada");
 
-  const dir = await makeTempDir();
-  const restricted = path.join(dir, "restrito");
-  await fs.mkdir(restricted);
-  await fs.chmod(restricted, 0o000);
+  const { realpath, calls } = makeFakeRealpath((p) =>
+    p === target ? fsError("ENOENT") : denied
+  );
 
-  try {
-    await assert.rejects(
-      () => canonicalizeAgainstFilesystem(path.join(restricted, "arquivo.txt")),
-      (err) => err.code !== "ENOENT"
-    );
-  } finally {
-    await fs.chmod(restricted, 0o700);
-  }
+  await assert.rejects(
+    () => canonicalizeAgainstFilesystem(target, { realpath }),
+    (err) => {
+      assert.equal(err, denied); // mesma identidade: erro original, sem wrapper
+      assert.equal(err.code, "EACCES");
+      assert.equal(err.message, "permissão negada simulada");
+      return true;
+    }
+  );
+
+  // Tentou o alvo (ENOENT) e depois o ancestral (EACCES); não seguiu subindo.
+  assert.deepEqual(calls, [target, ancestor]);
+});
+
+test("canonicalizeAgainstFilesystem: propaga EPERM lançado ao resolver o próprio alvo", async () => {
+  const target = path.join(path.resolve("raiz"), "arquivo.txt");
+  const denied = fsError("EPERM");
+  const { realpath, calls } = makeFakeRealpath(() => denied);
+
+  await assert.rejects(
+    () => canonicalizeAgainstFilesystem(target, { realpath }),
+    (err) => err === denied && err.code === "EPERM"
+  );
+  assert.deepEqual(calls, [target]);
+});
+
+test("canonicalizeAgainstFilesystem: ENOENT continua subindo até o ancestral existente", async () => {
+  const base = path.resolve("raiz");
+  const target = path.join(base, "a", "b", "c.txt");
+  const realBase = path.resolve("real");
+
+  const { realpath, calls } = makeFakeRealpath((p) =>
+    p === base ? realBase : fsError("ENOENT")
+  );
+
+  const result = await canonicalizeAgainstFilesystem(target, { realpath });
+
+  assert.deepEqual(result, {
+    canonicalPath: path.join(realBase, "a", "b", "c.txt"),
+    existed: false
+  });
+  assert.deepEqual(calls, [
+    target,
+    path.join(base, "a", "b"),
+    path.join(base, "a"),
+    base
+  ]);
+});
+
+test("canonicalizeAgainstFilesystem: rejeita realpath injetado que não é função", async () => {
+  await assert.rejects(
+    () => canonicalizeAgainstFilesystem(path.resolve("x"), { realpath: "nope" }),
+    TypeError
+  );
 });
